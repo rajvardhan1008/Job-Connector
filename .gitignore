@@ -1,0 +1,27 @@
+# Node.js dependencies
+node_modules/
+
+# Environment variables
+.env
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+tmp/
+dist/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Uploaded files (if you don't want them in Git)
+uploads/
+
+# IDE/Editor-specific files
+.vscode/
+*.swp
