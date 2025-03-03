@@ -6,10 +6,10 @@ const { createSeekerProfile, createProviderProfile, updateSeekerProfile, updateP
 const router = express.Router();
 const upload = multer({ dest: 'uploads/' });
 
-router.get('/', getProfile);
 router.post('/seeker', createSeekerProfile);
 router.post('/provider', createProviderProfile);
-router.post('/seeker/update', upload.single('resume'), updateSeekerProfile);
-router.post('/provider/update', updateProviderProfile);
+router.get('/get', getProfile);
+router.put('/update-seeker', updateSeekerProfile);   
+router.put('/update-provider', updateProviderProfile); 
 
 module.exports = router;
