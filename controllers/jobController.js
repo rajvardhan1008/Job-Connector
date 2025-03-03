@@ -136,7 +136,7 @@ exports.sendWhatsAppMessage = async (req, res) => {
     await client.messages.create({
       body: message,
       from: process.env.TWILIO_PHONE_NUMBER,
-      to: `whatsapp:${providerWhatsApp}`,
+      to: `whatsapp:'91' + ${providerWhatsApp}`,
     });
     res.json({ message: 'WhatsApp message sent successfully' });
   } catch (error) {
