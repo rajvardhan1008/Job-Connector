@@ -1,4 +1,4 @@
-// O:\JobConnector\backend\controllers\authController.js
+// backend/controllers/authController.js
 const nodemailer = require('nodemailer');
 const twilio = require('twilio');
 const JobSeeker = require('../models/JobSeeker');
@@ -9,7 +9,10 @@ const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TO
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
-  auth: { user: 'rajvardhant563@gmail.com', pass: 'woyo svyv bzux xyjq' },
+  auth: {
+    user: process.env.EMAIL_USER, // Email user
+    pass: process.env.EMAIL_PASS, // App Password
+  },
 });
 
 const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
@@ -18,7 +21,7 @@ const sendWhatsAppOTP = async (whatsappNumber, otp) => {
   try {
     await client.messages.create({
       body: `Your Job Connector OTP is: ${otp}`,
-      from: 'whatsapp:+14155238886', // Twilio sandbox number for WhatsApp
+      from: process.env.TWILIO_PHONE_NUMBER,
       to: `whatsapp:${whatsappNumber}`,
     });
     console.log(`WhatsApp OTP sent to ${whatsappNumber}`);
@@ -31,9 +34,9 @@ const sendWhatsAppOTP = async (whatsappNumber, otp) => {
 const sendEmailOTP = async (email, otp) => {
   try {
     await transporter.sendMail({
-      from: 'rajvardhant563@gmail.com',
+      from: process.env.EMAIL_USER,
       to: email,
-      subject: 'Your OTP for JobConnector',
+      subject: 'Job Connector OTP',
       text: `Your OTP is: ${otp}`,
     });
     console.log(`Email OTP sent to ${email}`);
@@ -43,7 +46,7 @@ const sendEmailOTP = async (email, otp) => {
   }
 };
 
-exports.requestOTP = async (req, res) => {
+const requestOTP = async (req, res) => {
   const { whatsappNumber, email, role, loginRequest } = req.body;
   const otp = generateOTP();
 
@@ -83,7 +86,7 @@ exports.requestOTP = async (req, res) => {
   }
 };
 
-exports.verifyOTP = async (req, res) => {
+const verifyOTP = async (req, res) => {
   const { whatsappNumber, email, otp, serverOtp, role, bypass } = req.body;
 
   try {
@@ -115,7 +118,6 @@ exports.verifyOTP = async (req, res) => {
         message: 'Bypass successful',
         user,
         isNewUser,
-        success: true,
       });
     }
 
@@ -128,7 +130,6 @@ exports.verifyOTP = async (req, res) => {
         message: 'OTP verification successful',
         user,
         isNewUser,
-        success: true,
       });
     } else {
       return res.status(400).json({ message: 'Invalid OTP' });
@@ -138,3 +139,5 @@ exports.verifyOTP = async (req, res) => {
     res.status(500).json({ message: 'Error verifying OTP' });
   }
 };
+
+module.exports = { requestOTP, verifyOTP, sendWhatsAppOTP };
