@@ -1,13 +1,22 @@
-// O:\JobConnector\backend\controllers\jobController.js
+// backend/controllers/jobController.js
 const JobPosting = require('../models/JobPosting');
 const JobSeeker = require('../models/JobSeeker');
 const JobProvider = require('../models/JobProvider');
+const twilio = require('twilio');
 const nodemailer = require('nodemailer');
 const xlsx = require('xlsx');
+const mongoose = require('mongoose');
+const Search = require('../models/Search'); // New model
+const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: { user: 'rajvardhant563@gmail.com', pass: 'woyo svyv bzux xyjq' },
+  host: process.env.EMAIL_HOST,
+  port: process.env.EMAIL_PORT,
+  secure: false,
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
 });
 
 exports.postJob = async (req, res) => {
@@ -68,15 +77,17 @@ exports.applyToJob = async (req, res) => {
     const seeker = await JobSeeker.findById(seekerId);
     if (!seeker) return res.status(404).json({ message: 'Seeker not found' });
 
+    // Update job with applicant
     job.applicants = job.applicants || [];
-    if (!job.applicants.some(app => app.seekerId.toString() === seekerId)) {
-      job.applicants.push({ seekerId });
-      await job.save();
+    if (!job.applicants.includes(seekerId)) {
+      job.applicants.push(seekerId);
+      await job.save()
     }
 
+    // Update seeker with applied job
     seeker.appliedJobs = seeker.appliedJobs || [];
     if (!seeker.appliedJobs.some(app => app.jobId.toString() === jobId)) {
-      seeker.appliedJobs.push({ jobId, title: job.jobTitle, status: 'Applied' });
+      seeker.appliedJobs.push({ jobId, status: 'Applied' });
       await seeker.save();
     }
 
@@ -88,16 +99,13 @@ exports.applyToJob = async (req, res) => {
 };
 
 exports.getApplicants = async (req, res) => {
-  const { providerId, jobId } = req.params.providerId ? req.params : req.query; // Support both old and new endpoints
+  const providerId = req.params.providerId;
   try {
-    const query = jobId ? { _id: jobId } : { postedBy: providerId };
-    const jobs = await JobPosting.find(query).populate('applicants.seekerId', 'fullName email whatsappNumber skills experience location resume');
+    const jobs = await JobPosting.find({ postedBy: providerId }).populate('applicants', 'fullName email whatsappNumber skills experience location');
     const applicants = jobs.flatMap(job => 
       job.applicants.map(seeker => ({
-        _id: seeker._id,
-        jobId: job._id,
         jobTitle: job.jobTitle,
-        seeker: seeker.seekerId,
+        seeker,
       }))
     );
     res.json(applicants);
@@ -108,11 +116,33 @@ exports.getApplicants = async (req, res) => {
 };
 
 exports.saveSearch = async (req, res) => {
-  res.json({ message: 'Search saved (placeholder)' }); // Placeholder as per mobile app needs
+  const { userId, role, searchCriteria } = req.body;
+  try {
+    const search = new Search({ userId, role, searchCriteria });
+    const savedSearch = await search.save();
+    console.log('Saved search:', savedSearch); // Debug log
+    res.json({ message: 'Search saved successfully', data: savedSearch });
+  } catch (error) {
+    console.error('Error saving search:', error);
+    res.status(500).json({ message: 'Error saving search' });
+  }
 };
 
 exports.sendWhatsAppMessage = async (req, res) => {
-  res.json({ message: 'WhatsApp message sent (placeholder)' }); // Placeholder—Twilio not fully implemented
+  const { seekerWhatsApp, providerWhatsApp, jobTitle, resumeUrl } = req.body;
+
+  try {
+    const message = `I have applied for the "${jobTitle}" post via Job Connector. Here’s my resume: ${resumeUrl || 'N/A'}`;
+    await client.messages.create({
+      body: message,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: `whatsapp:${providerWhatsApp}`,
+    });
+    res.json({ message: 'WhatsApp message sent successfully' });
+  } catch (error) {
+    console.error('Error sending WhatsApp message:', error);
+    res.status(500).json({ message: 'Error sending WhatsApp message' });
+  }
 };
 
 exports.getTrendingSkills = async (req, res) => {
@@ -123,7 +153,7 @@ exports.getTrendingSkills = async (req, res) => {
       { $sort: { count: -1 } },
       { $limit: 10 },
     ]);
-    res.json(skillsAgg.map(skill => skill._id));
+    res.json(skillsAgg.map(skill => ({ skill: skill._id, count: skill.count })));
   } catch (error) {
     console.error('Error fetching trending skills:', error);
     res.status(500).json({ message: 'Error fetching trending skills' });
@@ -138,7 +168,7 @@ exports.sendMassEmail = async (req, res) => {
     const emailPromises = seekers.map(seeker => {
       if (seeker.email) {
         return transporter.sendMail({
-          from: 'rajvardhant563@gmail.com',
+          from: process.env.EMAIL_USER,
           to: seeker.email,
           subject,
           text: body,
@@ -156,10 +186,24 @@ exports.sendMassEmail = async (req, res) => {
 };
 
 exports.searchSeekers = async (req, res) => {
-  const { skills } = req.query;
+  const { skills, experience, location, minCTC, maxCTC, filters } = req.query;
 
   try {
-    const query = skills ? { skills: { $in: skills.split(',') } } : {};
+    const query = {};
+    if (skills) {
+      const skillArray = skills.split(',').map(skill => new RegExp(skill.trim(), 'i'));
+      query.skills = { $in: skillArray };
+    }
+    if (experience) query.experience = { $lte: Number(experience) };
+    if (location) query.location = new RegExp(location, 'i');
+    if (minCTC) query.currentCTC = { $gte: Number(minCTC) };
+    if (maxCTC) query.expectedCTC = { $lte: Number(maxCTC) };
+    if (filters) {
+      const filterArr = filters.split(',');
+      if (filterArr.includes('viewed')) query.viewed = true;
+      if (filterArr.includes('new')) query.createdAt = { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) };
+    }
+
     const seekers = await JobSeeker.find(query);
     res.json(seekers);
   } catch (error) {
@@ -171,50 +215,54 @@ exports.searchSeekers = async (req, res) => {
 exports.uploadExcel = async (req, res) => {
   try {
     const file = req.file;
-    const { type } = req.body;
-    if (!file) return res.status(400).json({ message: 'No file uploaded' });
+    if (!file) {
+      return res.status(400).json({ message: 'No file uploaded' });
+    }
     const workbook = xlsx.readFile(file.path);
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
     const data = xlsx.utils.sheet_to_json(sheet);
 
+    console.log('Parsed Excel Data:', data);
+
+    const type = req.body.type;
     if (type === 'seekers') {
       const seekers = data.map(row => ({
-        fullName: row.fullName || 'Unnamed Seeker',
-        whatsappNumber: row.whatsappNumber,
-        email: row.email,
-        skillType: row.skillType,
-        skills: row.skills ? row.skills.split(',') : [],
-        experience: row.experience ? Number(row.experience) : 0,
-        location: row.location,
-        currentCTC: row.currentCTC ? Number(row.currentCTC) : null,
-        expectedCTC: row.expectedCTC ? Number(row.expectedCTC) : null,
-        noticePeriod: row.noticePeriod,
-        lastWorkingDate: row.lastWorkingDate ? new Date(row.lastWorkingDate) : null,
-        resume: row.resume,
-        bio: row.bio,
+        fullName: row.fullName || row.FullName || 'Unnamed Seeker',
+        whatsappNumber: row.whatsappNumber || row.WhatsappNumber,
+        email: row.email || row.Email,
+        skillType: row.skillType || row.SkillType,
+        skills: row.skills || row.Skills ? (row.skills || row.Skills).split(',') : [],
+        experience: row.experience || row.Experience ? Number(row.experience || row.Experience) : 0,
+        location: row.location || row.Location,
+        currentCTC: row.currentCTC || row.CurrentCTC ? Number(row.currentCTC || row.CurrentCTC) : null,
+        expectedCTC: row.expectedCTC || row.ExpectedCTC ? Number(row.expectedCTC || row.ExpectedCTC) : null,
+        noticePeriod: row.noticePeriod || row.NoticePeriod,
+        lastWorkingDate: row.lastWorkingDate || row.LastWorkingDate ? new Date(row.lastWorkingDate || row.LastWorkingDate) : null,
+        resume: row.resume || row.Resume,
+        bio: row.bio || row.Bio,
       }));
       const result = await JobSeeker.insertMany(seekers, { ordered: false });
       res.json({ message: 'Seekers uploaded successfully', seekersCount: result.length });
     } else if (type === 'jobs') {
       const jobs = data.map(row => ({
-        jobTitle: row.jobTitle || 'Unnamed Job',
-        skillType: row.skillType,
-        skills: row.skills ? row.skills.split(',') : [],
-        experienceRequired: row.experienceRequired ? Number(row.experienceRequired) : 0,
-        location: row.location,
-        maxCTC: row.maxCTC ? Number(row.maxCTC) : null,
-        noticePeriod: row.noticePeriod,
-        postedBy: row.postedBy || null,
+        jobTitle: row.jobTitle || row.JobTitle || 'Unnamed Job',
+        skillType: row.skillType || row.SkillType,
+        skills: row.skills || row.Skills ? (row.skills || row.Skills).split(',') : [],
+        experienceRequired: row.experienceRequired || row.ExperienceRequired ? Number(row.experienceRequired || row.ExperienceRequired) : 0,
+        location: row.location || row.Location,
+        maxCTC: row.maxCTC || row.MaxCTC ? Number(row.maxCTC || row.MaxCTC) : null,
+        noticePeriod: row.noticePeriod || row.NoticePeriod,
+        postedBy: row.postedBy || req.body.postedBy || null,
       }));
       const result = await JobPosting.insertMany(jobs, { ordered: false });
       res.json({ message: 'Jobs uploaded successfully', jobsCount: result.length });
     } else {
-      res.status(400).json({ message: 'Invalid type specified' });
+      return res.status(400).json({ message: 'Invalid type specified. Use "seekers" or "jobs"' });
     }
   } catch (error) {
     console.error('Error uploading Excel:', error);
-    res.status(500).json({ message: 'Error uploading Excel' });
+    res.status(500).json({ message: 'Error uploading Excel: ' + error.message });
   }
 };
 
@@ -229,6 +277,17 @@ exports.deleteSeeker = async (req, res) => {
   }
 };
 
+exports.deleteProvider = async (req, res) => {
+  const { providerId } = req.body;
+  try {
+    await JobProvider.findByIdAndDelete(providerId);
+    res.json({ message: 'Provider deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting provider:', error);
+    res.status(500).json({ message: 'Error deleting provider' });
+  }
+};
+
 exports.deleteJob = async (req, res) => {
   const { jobId } = req.body;
   try {
@@ -237,5 +296,32 @@ exports.deleteJob = async (req, res) => {
   } catch (error) {
     console.error('Error deleting job:', error);
     res.status(500).json({ message: 'Error deleting job' });
+  }
+};
+
+exports.getProfile = async (req, res) => {
+  const { role, email, whatsappNumber, seekerId } = req.query;
+  console.log('getProfile query:', req.query); // Debug log
+  try {
+    let user;
+    if (seekerId) {
+      user = await JobSeeker.findById(seekerId);
+      console.log('Seeker found by ID:', user); // Debug log
+      if (!user) return res.status(404).json({ message: 'Seeker not found by ID' });
+    } else if (role === 'seeker') {
+      user = await JobSeeker.findOne(email ? { email } : { whatsappNumber });
+      console.log('Seeker found by email/whatsapp:', user); // Debug log
+      if (!user) return res.status(404).json({ message: 'Seeker not found by email or WhatsApp' });
+    } else if (role === 'provider') {
+      user = await JobProvider.findOne(email ? { email } : { whatsappNumber });
+      console.log('Provider found:', user); // Debug log
+      if (!user) return res.status(404).json({ message: 'Provider not found' });
+    } else {
+      return res.status(400).json({ message: 'Invalid request parameters' });
+    }
+    res.json(user);
+  } catch (error) {
+    console.error('Error fetching profile:', error);
+    res.status(500).json({ message: 'Error fetching profile' });
   }
 };
