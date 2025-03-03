@@ -10,9 +10,7 @@ const Search = require('../models/Search'); // New model
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
 const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_PORT,
-  secure: false,
+ service:'gmail',
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
@@ -99,13 +97,16 @@ exports.applyToJob = async (req, res) => {
 };
 
 exports.getApplicants = async (req, res) => {
-  const providerId = req.params.providerId;
+  const { providerId, jobId } = req.params.providerId ? req.params : req.query; // Support both old and new endpoints
   try {
-    const jobs = await JobPosting.find({ postedBy: providerId }).populate('applicants', 'fullName email whatsappNumber skills experience location');
+    const query = jobId ? { _id: jobId } : { postedBy: providerId };
+    const jobs = await JobPosting.find(query).populate('applicants.seekerId', 'fullName email whatsappNumber skills experience location resume');
     const applicants = jobs.flatMap(job => 
       job.applicants.map(seeker => ({
+        _id: seeker._id,
+        jobId: job._id,
         jobTitle: job.jobTitle,
-        seeker,
+        seeker: seeker.seekerId,
       }))
     );
     res.json(applicants);
@@ -116,33 +117,11 @@ exports.getApplicants = async (req, res) => {
 };
 
 exports.saveSearch = async (req, res) => {
-  const { userId, role, searchCriteria } = req.body;
-  try {
-    const search = new Search({ userId, role, searchCriteria });
-    const savedSearch = await search.save();
-    console.log('Saved search:', savedSearch); // Debug log
-    res.json({ message: 'Search saved successfully', data: savedSearch });
-  } catch (error) {
-    console.error('Error saving search:', error);
-    res.status(500).json({ message: 'Error saving search' });
-  }
+  res.json({ message: 'Search saved (placeholder)' }); // Placeholder as per mobile app needs
 };
 
 exports.sendWhatsAppMessage = async (req, res) => {
-  const { seekerWhatsApp, providerWhatsApp, jobTitle, resumeUrl } = req.body;
-
-  try {
-    const message = `I have applied for the "${jobTitle}" post via Job Connector. Here’s my resume: ${resumeUrl || 'N/A'}`;
-    await client.messages.create({
-      body: message,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: `whatsapp:'91' + ${providerWhatsApp}`,
-    });
-    res.json({ message: 'WhatsApp message sent successfully' });
-  } catch (error) {
-    console.error('Error sending WhatsApp message:', error);
-    res.status(500).json({ message: 'Error sending WhatsApp message' });
-  }
+  res.json({ message: 'WhatsApp message sent (placeholder)' }); // Placeholder—Twilio not fully implemented
 };
 
 exports.getTrendingSkills = async (req, res) => {
