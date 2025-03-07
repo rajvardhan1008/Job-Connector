@@ -1,15 +1,20 @@
-// backend/controllers/profileController.js
+// O:\JobConnector\backend\controllers\profileController.js
 const JobSeeker = require('../models/JobSeeker');
 const JobProvider = require('../models/JobProvider');
 
 exports.updateSeekerProfile = async (req, res) => {
   const { _id, fullName, whatsappNumber, email, skills, experience, location } = req.body;
   try {
-    const seeker = await JobSeeker.findByIdAndUpdate(
-      _id,
-      { fullName, whatsappNumber, email, skills, experience: Number(experience), location },
-      { new: true }
-    );
+    const updateData = {
+      fullName,
+      whatsappNumber,
+      email,
+      skills: skills ? skills.split(',') : undefined,
+      experience: experience ? Number(experience) : undefined,
+      location,
+    };
+    if (req.file) updateData.resume = req.file.path; // Store file path (adjust for cloud storage if needed)
+    const seeker = await JobSeeker.findByIdAndUpdate(_id, updateData, { new: true });
     if (!seeker) return res.status(404).json({ message: 'Seeker not found' });
     res.json({ message: 'Seeker profile updated successfully', user: seeker });
   } catch (error) {
@@ -34,36 +39,49 @@ exports.updateProviderProfile = async (req, res) => {
   }
 };
 
-// Existing functions (createSeekerProfile, createProviderProfile, getProfile) remain unchanged
-
-// Create or update Job Seeker profile
 exports.createSeekerProfile = async (req, res) => {
-  const {
-    fullName, whatsappNumber, email, skillType, skills, experience, location,
-    currentCTC, expectedCTC, noticePeriod, lastWorkingDate, resume, bio
-  } = req.body;
-
   try {
+    const {
+      fullName, whatsappNumber, email, skillType, skills, experience, location,
+      currentCTC, expectedCTC, noticePeriod, lastWorkingDate, bio
+    } = req.body;
+
+    // Check if user already exists
     let seeker = await JobSeeker.findOne({ $or: [{ whatsappNumber }, { email }] });
     if (seeker) {
-      return res.status(400).json({ message: 'User already exists. Please login.' });
+      return res.status(400).json({ message: "User already exists. Please login." });
     }
 
+    let resumeUrl = "";
+    if (req.file) {
+      resumeUrl = req.file.path; // Cloudinary uploads return the file URL here
+    }
+
+    // Create new job seeker profile
     seeker = new JobSeeker({
-      fullName, whatsappNumber, email, skillType, skills: skills.split(','), // Convert skills to array
-      experience: Number(experience), location, currentCTC: Number(currentCTC),
-      expectedCTC: Number(expectedCTC), noticePeriod, lastWorkingDate, resume, bio
+      fullName,
+      whatsappNumber,
+      email,
+      skillType,
+      skills: skills ? skills.split(",") : [],
+      experience: experience ? Number(experience) : 0,
+      location,
+      currentCTC: currentCTC ? Number(currentCTC) : null,
+      expectedCTC: expectedCTC ? Number(expectedCTC) : null,
+      noticePeriod,
+      lastWorkingDate,
+      resume: resumeUrl, // Save resume URL in DB
+      bio,
     });
 
     await seeker.save();
-    res.json({ message: 'Profile created successfully', seeker });
+    res.json({ message: "Profile created successfully", user: seeker });
   } catch (error) {
-    console.error('Error creating seeker profile:', error);
-    res.status(500).json({ message: 'Error creating profile' });
+    console.error("Error creating seeker profile:", error);
+    res.status(500).json({ message: "Error creating profile" });
   }
 };
 
-// Create or update Job Provider profile
 exports.createProviderProfile = async (req, res) => {
   const { companyName, hrName, hrWhatsappNumber, email } = req.body;
 
@@ -75,14 +93,13 @@ exports.createProviderProfile = async (req, res) => {
 
     provider = new JobProvider({ companyName, hrName, hrWhatsappNumber, email });
     await provider.save();
-    res.json({ message: 'Profile created successfully', provider });
+    res.json({ message: 'Profile created successfully', user: provider });
   } catch (error) {
     console.error('Error creating provider profile:', error);
     res.status(500).json({ message: 'Error creating profile' });
   }
 };
 
-// Get user profile (for dashboards)
 exports.getProfile = async (req, res) => {
   const { role, whatsappNumber, email } = req.query;
 
@@ -93,7 +110,9 @@ exports.getProfile = async (req, res) => {
     } else if (role === 'provider') {
       user = await JobProvider.findOne({ $or: [{ hrWhatsappNumber: whatsappNumber }, { email }] });
     } else if (role === 'admin') {
-      user = await JobProvider.findOne({ $or: [{ hrWhatsappNumber: whatsappNumber }, { email }] });
+      user = await Admin.findOne({ $or: [{ whatsappNumber }, { email }] });
+    } else {
+      return res.status(400).json({ message: 'Invalid role specified' });
     }
 
     if (!user) {
