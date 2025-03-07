@@ -33,16 +33,17 @@ const authRoutes = require('./routes/authRoutes'); // Authentication routes
 const profileRoutes = require('./routes/profileRoutes'); // Profile routes
 const jobRoutes = require('./routes/jobRoutes'); // Job routes
 
-app.use('/api/auth', authRoutes); // Mount auth routes
-app.use('/api/profile', profileRoutes); // Mount profile routes
-app.use('/api/jobs', jobRoutes); // Mount job routes
-
 app.post('/api/upload/resume', uploadResume.single('resume'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
   res.json({ url: req.file.path });
 });
+
+app.use('/api/auth', authRoutes); // Mount auth routes
+app.use('/api/profile', profileRoutes); // Mount profile routes
+app.use('/api/jobs', jobRoutes); // Mount job routes
+
 
 const PORT = process.env.PORT || 5000; // Use env port or default to 5000
 app.listen(PORT, () => {
