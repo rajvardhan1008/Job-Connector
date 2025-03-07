@@ -4,7 +4,7 @@ const mongoose = require('mongoose'); // MongoDB ORM
 const cors = require('cors'); // Enable CORS for frontend
 const dotenv = require('dotenv'); // Load environment variables
 const multer = require('multer'); // File upload middleware
-const uploadResume = require('./uploadResume'); 
+const uploadResume = require('./resumeUpload'); 
 
 dotenv.config(); // Load .env file
 
