@@ -2,14 +2,15 @@
 const express = require('express');
 const multer = require('multer');
 const { createSeekerProfile, createProviderProfile, updateSeekerProfile, updateProviderProfile, getProfile } = require('../controllers/profileController');
+const uploadResume = require('../resumeUpload');
 
 const router = express.Router();
 const upload = multer({ dest: 'uploads/' });
 
-router.post('/seeker', createSeekerProfile);
+router.get('/', getProfile);
+router.post('/seeker', uploadResume.single("resume"), createSeekerProfile);
 router.post('/provider', createProviderProfile);
-router.get('/get', getProfile);
-router.put('/update-seeker', updateSeekerProfile);   
-router.put('/update-provider', updateProviderProfile); 
+router.post('/seeker/update', upload.single('resume'), updateSeekerProfile);
+router.post('/provider/update', updateProviderProfile);
 
 module.exports = router;
